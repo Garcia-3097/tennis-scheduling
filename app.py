@@ -237,28 +237,48 @@ with st.sidebar:
             else:
                 st.info("No hay ausencias")
 
-    # --- Exportación ---
+    # --- Exportación con descarga directa ---
     with st.expander("📤 Exportar"):
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📥 Excel", key="btn_excel", use_container_width=True):
-                df = cargar_datos_mes(año, mes)
-                if not df.empty:
-                    output_path = os.path.join(OUTPUT_DIR, f"calendario_{año}_{mes:02d}.xlsx")
-                    generar_excel_con_formato(df, año, mes, ciclo, output_path)
-                    st.success("Exportado")
-                else:
-                    st.warning("Sin datos")
-        with col2:
-            if st.button("📄 PDF", key="btn_pdf", use_container_width=True):
-                df = cargar_datos_mes(año, mes)
-                if not df.empty:
-                    output_path = os.path.join(OUTPUT_DIR, f"calendario_{año}_{mes:02d}.pdf")
-                    generar_pdf_calendario(df, año, mes, ciclo, output_path)
-                    st.success("Exportado")
-                else:
-                    st.warning("Sin datos")
+            df = cargar_datos_mes(año, mes)
+            if not df.empty:
+                # Generar Excel en memoria
+                output_path_excel = os.path.join(OUTPUT_DIR, f"calendario_{año}_{mes:02d}.xlsx")
+                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                generar_excel_con_formato(df, año, mes, ciclo, output_path_excel)
+                with open(output_path_excel, "rb") as file:
+                    st.download_button(
+                        label="📥 Excel",
+                        data=file,
+                        file_name=f"calendario_{año}_{mes:02d}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="btn_excel",
+                        use_container_width=True
+                    )
+            else:
+                st.button("📥 Excel", disabled=True, key="btn_excel_disabled", use_container_width=True)
+                st.warning("Sin datos")
 
+        with col2:
+            df = cargar_datos_mes(año, mes)
+            if not df.empty:
+                output_path_pdf = os.path.join(OUTPUT_DIR, f"calendario_{año}_{mes:02d}.pdf")
+                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                generar_pdf_calendario(df, año, mes, ciclo, output_path_pdf)
+                with open(output_path_pdf, "rb") as file:
+                    st.download_button(
+                        label="📄 PDF",
+                        data=file,
+                        file_name=f"calendario_{año}_{mes:02d}.pdf",
+                        mime="application/pdf",
+                        key="btn_pdf",
+                        use_container_width=True
+                    )
+            else:
+                st.button("📄 PDF", disabled=True, key="btn_pdf_disabled", use_container_width=True)
+                st.warning("Sin datos")
+                
     # --- Info colores ---
     with st.expander("🎨 Colores"):
         st.markdown("""
