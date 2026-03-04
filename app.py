@@ -390,7 +390,7 @@ else:
 # ------------------------------------------------------------
 st.markdown("---")
 st.markdown(
-    "<div style='text-align: left;'> © 2026 Tennis S.A. Todos los derechos reservados. Desarrollado por Dairo García.</div>",
+    "<div style='text-align: left;'> © 2026 Dairo García. Licencia MIT. Desarrollado para Tennis S.A.</div>",
     unsafe_allow_html=True
 )
 
