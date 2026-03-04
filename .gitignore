@@ -1,0 +1,25 @@
+# Entornos virtuales
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Datos locales
+data/
+output/
+
+# IDE
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/
