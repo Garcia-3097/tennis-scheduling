@@ -1,141 +1,114 @@
 """
 ciclos.py
-Módulo para la generación de calendarios del Grupo A (rotativo).
-Implementa los ciclos 2x2x2 y 4x2, con continuidad entre meses y
-detección de cambio de ciclo para mantener 2 personas por turno siempre.
+Generación de calendarios rotativos para Grupo A.
 """
 
+import random
 import pandas as pd
 import holidays
 from datetime import date, timedelta
-import os
-import sys
+from typing import List, Tuple, Optional
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import database
+from . import database  # <--- CAMBIO: importación relativa
 
 # ------------------------------------------------------------
-# Funciones auxiliares
+# Constantes
 # ------------------------------------------------------------
+NUM_PERSONAS_A = 6
+CICLO_2X2X2 = "2x2x2"
+CICLO_4X2 = "4x2"
+PATRON_2X2X2 = ['M', 'M', 'N', 'N', 'L', 'L']
+PATRON_4X2 = ['M', 'M', 'M', 'M', 'L', 'L', 'N', 'N', 'N', 'N', 'L', 'L']
 
-def obtener_festivos(año, pais='CO'):
-    """Devuelve un set de objetos date con los festivos del año."""
-    co_holidays = holidays.CountryHoliday(pais, years=año)
-    return set(co_holidays.keys())
+# ------------------------------------------------------------
+# Festivos
+# ------------------------------------------------------------
+def obtener_festivos(año: int, pais: str = 'CO') -> set:
+    """Retorna un set de fechas festivas del año."""
+    return set(holidays.CountryHoliday(pais, years=año).keys())
 
-def generar_rango_fechas(año, mes):
-    """Genera una lista de objetos date para todos los días del mes."""
+def generar_rango_fechas(año: int, mes: int) -> List[date]:
+    """Genera lista de objetos date para todos los días del mes."""
     inicio = date(año, mes, 1)
     if mes == 12:
         fin = date(año + 1, 1, 1) - timedelta(days=1)
     else:
         fin = date(año, mes + 1, 1) - timedelta(days=1)
-    dias = []
-    dia_actual = inicio
-    while dia_actual <= fin:
-        dias.append(dia_actual)
-        dia_actual += timedelta(days=1)
-    return dias
+    return [inicio + timedelta(days=i) for i in range((fin - inicio).days + 1)]
 
 # ------------------------------------------------------------
-# Gestión de offsets en BD
+# Offsets en BD
 # ------------------------------------------------------------
+def guardar_offsets(offsets: List[int], año: int, mes: int, ciclo: str) -> None:
+    """Guarda los offsets finales de cada persona del Grupo A."""
+    with database.get_connection() as conn:
+        for persona_id, offset in enumerate(offsets, start=1):
+            conn.execute("""
+                INSERT OR REPLACE INTO estado_ciclo (persona_id, año, mes, offset, ciclo)
+                VALUES (?, ?, ?, ?, ?)
+            """, (persona_id, año, mes, offset, ciclo))
+        conn.commit()
 
-def guardar_offsets(offsets, año, mes, ciclo):
-    """
-    Guarda los offsets finales de cada persona para el mes dado.
-    offsets: lista de 6 enteros.
-    """
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    for persona_id, offset in enumerate(offsets, start=1):
-        cursor.execute("""
-            INSERT OR REPLACE INTO estado_ciclo (persona_id, año, mes, offset, ciclo)
-            VALUES (?, ?, ?, ?, ?)
-        """, (persona_id, año, mes, offset, ciclo))
-    conn.commit()
-    conn.close()
-
-def cargar_offsets(año, mes):
-    """
-    Carga los offsets iniciales para el mes actual a partir del mes anterior.
-    Retorna (offsets, ciclo_anterior) o (None, None) si no existe.
-    """
+def cargar_offsets(año: int, mes: int) -> Tuple[Optional[List[int]], Optional[str]]:
+    """Carga los offsets del mes anterior (si existen). Retorna (offsets, ciclo_anterior)."""
     if mes == 1:
-        año_ant = año - 1
-        mes_ant = 12
+        año_ant, mes_ant = año - 1, 12
     else:
-        año_ant = año
-        mes_ant = mes - 1
+        año_ant, mes_ant = año, mes - 1
 
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT persona_id, offset, ciclo
-        FROM estado_ciclo
-        WHERE año = ? AND mes = ?
-        ORDER BY persona_id
-    """, (año_ant, mes_ant))
-    filas = cursor.fetchall()
-    conn.close()
+    with database.get_connection() as conn:
+        cursor = conn.execute("""
+            SELECT persona_id, offset, ciclo
+            FROM estado_ciclo
+            WHERE año = ? AND mes = ?
+            ORDER BY persona_id
+        """, (año_ant, mes_ant))
+        filas = cursor.fetchall()
 
-    if len(filas) != 6:
+    if len(filas) != NUM_PERSONAS_A:
         return None, None
     offsets = [f[1] for f in filas]
-    ciclo_anterior = filas[0][2] if filas else None
-    return offsets, ciclo_anterior
+    ciclo_ant = filas[0][2] if filas else None
+    return offsets, ciclo_ant
 
 # ------------------------------------------------------------
-# Generación de ciclos
+# Ciclos
 # ------------------------------------------------------------
-
-def ciclo_2x2x2(dias, offsets_iniciales=None, num_personas=6):
-    """
-    Ciclo 2x2x2: patrón [M,M,N,N,L,L] de 6 días.
-    Offsets por defecto: [0,1,2,3,4,5] (garantiza 2 personas por turno).
-    """
-    patron = ['M', 'M', 'N', 'N', 'L', 'L']
-    if offsets_iniciales is None:
-        offsets_iniciales = list(range(num_personas))
+def ciclo_2x2x2(dias: List[date], offsets_iniciales: List[int]) -> Tuple[List[List[str]], List[int]]:
+    """Genera turnos con ciclo 2x2x2."""
+    periodo = len(PATRON_2X2X2)
     turnos_por_persona = []
     offsets_finales = []
-    for p in range(num_personas):
+    for p in range(NUM_PERSONAS_A):
         offset = offsets_iniciales[p]
         turnos = []
         for i in range(len(dias)):
-            idx = (i + offset) % len(patron)
-            turnos.append(patron[idx])
+            idx = (i + offset) % periodo
+            turnos.append(PATRON_2X2X2[idx])
         turnos_por_persona.append(turnos)
-        offsets_finales.append((offset + len(dias)) % len(patron))
+        offsets_finales.append((offset + len(dias)) % periodo)
     return turnos_por_persona, offsets_finales
 
-def ciclo_4x2(dias, offsets_iniciales=None, num_personas=6):
-    """
-    Ciclo 4x2: patrón [M,M,M,M, L,L, N,N,N,N, L,L] de 12 días.
-    Offsets por defecto: [0,2,4,6,8,10] (garantiza 2 personas por turno).
-    """
-    patron = ['M', 'M', 'M', 'M', 'L', 'L', 'N', 'N', 'N', 'N', 'L', 'L']
-    if offsets_iniciales is None:
-        offsets_iniciales = [i * 2 for i in range(num_personas)]  # [0,2,4,6,8,10]
+def ciclo_4x2(dias: List[date], offsets_iniciales: List[int]) -> Tuple[List[List[str]], List[int]]:
+    """Genera turnos con ciclo 4x2."""
+    periodo = len(PATRON_4X2)
     turnos_por_persona = []
     offsets_finales = []
-    for p in range(num_personas):
+    for p in range(NUM_PERSONAS_A):
         offset = offsets_iniciales[p]
         turnos = []
         for i in range(len(dias)):
-            idx = (i + offset) % len(patron)
-            turnos.append(patron[idx])
+            idx = (i + offset) % periodo
+            turnos.append(PATRON_4X2[idx])
         turnos_por_persona.append(turnos)
-        offsets_finales.append((offset + len(dias)) % len(patron))
+        offsets_finales.append((offset + len(dias)) % periodo)
     return turnos_por_persona, offsets_finales
 
-def verificar_regla_descanso(turnos_por_persona, dias):
-    """
-    RF-02: Verifica que no haya transición Noche -> Mañana sin Libre intermedio.
-    """
+def verificar_regla_descanso(turnos_por_persona: List[List[str]], dias: List[date]) -> List[str]:
+    """Verifica que no haya N → M sin Libre intermedio."""
     advertencias = []
     for p, turnos in enumerate(turnos_por_persona):
-        for i in range(len(turnos)-1):
+        for i in range(len(turnos) - 1):
             if turnos[i] == 'N' and turnos[i+1] == 'M':
                 advertencias.append(
                     f"Persona {p+1}: {dias[i]} N → {dias[i+1]} M"
@@ -143,43 +116,47 @@ def verificar_regla_descanso(turnos_por_persona, dias):
     return advertencias
 
 # ------------------------------------------------------------
-# Función principal
+# Generador principal
 # ------------------------------------------------------------
-
-def generar_calendario_grupoA(año, mes, ciclo='2x2x2', pais='CO', offsets_iniciales=None):
+def generar_calendario_grupoA(
+    año: int,
+    mes: int,
+    ciclo: str = CICLO_2X2X2,
+    pais: str = 'CO',
+    offsets_iniciales: Optional[List[int]] = None
+) -> Tuple[pd.DataFrame, List[int]]:
     """
-    Genera DataFrame y offsets finales.
+    Genera DataFrame con calendario del Grupo A.
     Si offsets_iniciales es None, intenta cargar desde mes anterior.
-    Si hay cambio de ciclo, se ignoran los offsets cargados y se usan los por defecto.
     """
     dias = generar_rango_fechas(año, mes)
-    num_personas = 6
 
     # Determinar offsets iniciales
     if offsets_iniciales is None:
         offsets_cargados, ciclo_ant = cargar_offsets(año, mes)
-        if offsets_cargados is not None:
-            if ciclo_ant == ciclo:
-                offsets_iniciales = offsets_cargados
-                print(f"Usando offsets del mes anterior (mismo ciclo: {ciclo})")
-            else:
-                print(f"Cambio de ciclo detectado: {ciclo_ant} → {ciclo}. Usando offsets por defecto.")
-                # No asignamos offsets_iniciales, cada ciclo usará su default
+        if offsets_cargados is not None and ciclo_ant == ciclo:
+            offsets_iniciales = offsets_cargados
         else:
-            print("No hay mes anterior, usando offsets por defecto del ciclo.")
+            # Usar offsets por defecto del ciclo
+            if ciclo == CICLO_2X2X2:
+                offsets_iniciales = list(range(NUM_PERSONAS_A))
+            elif ciclo == CICLO_4X2:
+                offsets_iniciales = [i * 2 for i in range(NUM_PERSONAS_A)]
+            else:
+                raise ValueError("Ciclo no válido")
 
     # Generar según ciclo
-    if ciclo == '2x2x2':
-        turnos_por_persona, offsets_finales = ciclo_2x2x2(dias, offsets_iniciales, num_personas)
-    elif ciclo == '4x2':
-        turnos_por_persona, offsets_finales = ciclo_4x2(dias, offsets_iniciales, num_personas)
+    if ciclo == CICLO_2X2X2:
+        turnos_por_persona, offsets_finales = ciclo_2x2x2(dias, offsets_iniciales)
+    elif ciclo == CICLO_4X2:
+        turnos_por_persona, offsets_finales = ciclo_4x2(dias, offsets_iniciales)
     else:
         raise ValueError("Ciclo no válido. Use '2x2x2' o '4x2'.")
 
-    # Verificar RF-02
+    # Verificar regla de descanso
     advertencias = verificar_regla_descanso(turnos_por_persona, dias)
     if advertencias:
-        print("⚠️  Se detectaron posibles violaciones a RF-02:")
+        print("⚠️ Posibles violaciones a RF-02:")
         for adv in advertencias:
             print(f"   {adv}")
 
@@ -188,8 +165,8 @@ def generar_calendario_grupoA(año, mes, ciclo='2x2x2', pais='CO', offsets_inici
 
     # Construir DataFrame
     filas = []
-    for p in range(num_personas):
-        persona_id = p + 1  # IDs 1..6
+    for p in range(NUM_PERSONAS_A):
+        persona_id = p + 1
         for i, fecha in enumerate(dias):
             filas.append({
                 'persona_id': persona_id,
@@ -197,19 +174,40 @@ def generar_calendario_grupoA(año, mes, ciclo='2x2x2', pais='CO', offsets_inici
                 'turno': turnos_por_persona[p][i],
                 'es_festivo': 1 if fecha in festivos else 0
             })
-
     df = pd.DataFrame(filas)
     return df, offsets_finales
 
-def guardar_calendario_en_bd(df, año, mes):
+def guardar_calendario_en_bd(df: pd.DataFrame, año: int, mes: int) -> None:
+    """Inserta el DataFrame en la tabla calendario (reemplazando el mes)."""
+    with database.get_connection() as conn:
+        fecha_like = f"{año}-{mes:02d}%"
+        conn.execute("DELETE FROM calendario WHERE fecha LIKE ?", (fecha_like,))
+        df.to_sql('calendario', conn, if_exists='append', index=False)
+        conn.commit()
+
+# ------------------------------------------------------------
+# Alternativas
+# ------------------------------------------------------------
+def generar_variantes_offsets(
+    ciclo: str,
+    num_variantes: int = 7,
+    semilla_base: int = 42
+) -> List[List[int]]:
     """
-    Inserta el DataFrame en la tabla calendario, reemplazando registros existentes.
+    Genera múltiples conjuntos de offsets iniciales para el Grupo A.
+    Cada conjunto es una permutación de los offsets base del ciclo.
     """
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    fecha_like = f"{año}-{mes:02d}%"
-    cursor.execute("DELETE FROM calendario WHERE fecha LIKE ?", (fecha_like,))
-    df.to_sql('calendario', conn, if_exists='append', index=False)
-    conn.commit()
-    conn.close()
-    print(f"✅ Calendario Grupo A de {mes}/{año} guardado en base de datos.")
+    if ciclo == CICLO_2X2X2:
+        offsets_base = list(range(6))  # [0,1,2,3,4,5]
+    elif ciclo == CICLO_4X2:
+        offsets_base = [i * 2 for i in range(6)]  # [0,2,4,6,8,10]
+    else:
+        raise ValueError(f"Ciclo no soportado: {ciclo}")
+
+    variantes = []
+    for v in range(num_variantes):
+        rng = random.Random(semilla_base + v)
+        offsets_permutados = offsets_base[:]
+        rng.shuffle(offsets_permutados)
+        variantes.append(offsets_permutados)
+    return variantes
