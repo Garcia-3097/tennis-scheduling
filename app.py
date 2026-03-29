@@ -182,6 +182,10 @@ def generar_alternativas(año, mes, ciclo, pais, num_alternativas=7, modo='norma
 
         if modo == 'contingencia':
             df_mostrar, _ = ausencias.aplicar_contingencia_a_df(df_combinado, año, mes, pais)
+            # apicar valanceo adicional (ya que aplicar_contingencia_a_df no guarda en DB)
+            # y queremos que alternativa se muestre ya balanceada
+            from src import balanceo
+            df_mostrar = balanceo.aplicar_balanceo(df_mostrar, año, mes)
         else:
             df_mostrar = df_combinado
 

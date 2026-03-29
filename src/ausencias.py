@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from . import database
 from . import ciclos
 from . import grupo_b
+from . import balanceo
 
 # ------------------------------------------------------------
 # CRUD de ausencias
@@ -293,6 +294,21 @@ def aplicar_contingencia(año, mes):
         df, acciones = reasignar_por_ausencias(df, año, mes, deficits, df_original, ausencias_list)
     else:
         acciones = []
+
+    # --- NUEVO: Aplicar balanceo de equidad ---
+    # El balanceo es una optimización no crítica: si falla, las ausencias
+    # ya están correctamente aplicadas y el calendario es válido.
+    try:
+        df = balanceo.aplicar_balanceo(df, año, mes)
+        balanceo.guardar_balanceo_en_bd(df, año, mes)
+    except Exception as e:
+        import logging
+        logging.warning(
+            f"[balanceo] Error no crítico al balancear/guardar "
+            f"({año}-{mes:02d}): {e}"
+        )
+    # -----------------------------------------
+
     return df, acciones
 
 def aplicar_contingencia_a_df(df_original, año, mes, pais='CO'):
@@ -309,4 +325,18 @@ def aplicar_contingencia_a_df(df_original, año, mes, pais='CO'):
         df, acciones = _reasignar_por_ausencias_df(df, año, mes, deficits, df_original, ausencias_list)
     else:
         acciones = []
+        
+    # --- NUEVO: Aplicar balanceo (solo modifica DataFrame, no persiste) ---
+    # El balanceo es no crítico: si falla, el calendario sigue siendo válido.
+    try:
+        df = balanceo.aplicar_balanceo(df, año, mes)
+    except Exception as e:
+        import logging
+        logging.warning(
+            f"[balanceo] Error no crítico en vista previa "
+            f"({año}-{mes:02d}): {e}"
+        )
+    # No se guarda en BD porque esta función se usa para alternativas o vista previa
+    # -----------------------------------------------------------------------
+
     return df, acciones
