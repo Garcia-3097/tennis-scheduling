@@ -268,13 +268,13 @@ def init_session_state():
 init_session_state()
 
 # ------------------------------------------------------------
-# Sidebar con formulario y grupos lógicos
+# Sidebar con formulario y grupos lógicos (compacto)
 # ------------------------------------------------------------
 with st.sidebar:
     st.image(resource_path("assets/logo.png"), width=200)
     st.title("⚙️ Configuración")
 
-    # Formulario para los parámetros principales (evita re-ejecuciones al cambiar)
+    # Formulario principal
     with st.form("config_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -288,28 +288,23 @@ with st.sidebar:
         ciclo = st.selectbox("Rotación (Grupo A)", options=['2x2x2', '4x2'], index=0 if st.session_state.ciclo == '2x2x2' else 1)
         modo = st.radio("Modo", options=['normal', 'contingencia'], index=0 if st.session_state.modo == 'normal' else 1, horizontal=True,
                         format_func=lambda x: "Estándar" if x == 'normal' else "Con ausencias")
-
         submitted = st.form_submit_button("📅 Generar calendario", use_container_width=True)
 
     if submitted:
-        # Actualizar estado con los nuevos valores
         st.session_state.año = año
         st.session_state.mes = mes
         st.session_state.ciclo = ciclo
         st.session_state.modo = modo
 
-        # Generar el calendario según el modo
         with st.spinner("Generando calendario..."):
             if modo == 'normal':
-                # Modo normal: generar y balancear automáticamente
                 df = generar_calendario_completo(año, mes, ciclo, st.session_state.config['pais'], balancear=True)
                 st.session_state.calendario_actual = df
                 st.session_state.alternativas = None
                 st.toast("Calendario generado correctamente", icon="✅")
-            else:  # contingencia
-                # Primero generar el calendario base sin balanceo (se balanceará dentro de aplicar_contingencia)
+            else:
+                # contingencia
                 df_base = generar_calendario_completo(año, mes, ciclo, st.session_state.config['pais'], balancear=False)
-                # Aplicar contingencia (esto incluye balanceo)
                 with st.spinner("Aplicando contingencia..."):
                     df_final, acciones = ausencias.aplicar_contingencia(año, mes)
                     if df_final is None:
@@ -320,9 +315,7 @@ with st.sidebar:
                     st.toast("Contingencia aplicada correctamente", icon="✅")
         st.rerun()
 
-    st.markdown("---")
-
-    # Botón para generar alternativas (usa los valores actuales del estado)
+    # Botón alternativas
     if st.button("🔍 Ver otras opciones (7 variantes)", use_container_width=True):
         with st.spinner("Generando alternativas..."):
             alts = generar_alternativas(st.session_state.año, st.session_state.mes,
@@ -334,7 +327,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Expandir para gestión de personas
+    # Administrar personas (expander)
     with st.expander("👥 Administrar personas"):
         personas = database.obtener_personas()
         for p in personas:
@@ -371,7 +364,7 @@ with st.sidebar:
             st.toast("Configuración guardada", icon="✅")
             st.rerun()
 
-    # Expandir para ausencias
+    # Registrar ausencias (expander)
     with st.expander("📅 Registrar ausencias"):
         with st.container():
             st.markdown("**Nueva ausencia**")
@@ -401,16 +394,6 @@ with st.sidebar:
                         st.rerun()
         else:
             st.info("No hay ausencias registradas")
-
-    # Expandir para colores (solo información)
-    with st.expander("🎨 Colores"):
-        st.markdown("""
-        - 🟢 **M** = Mañana
-        - 🟡 **T** = Tarde
-        - 🔵 **N** = Noche
-        - 🔴 **Festivo/Domingo**
-        - 🔴 **V/PNR/IM/CD** = Ausencia
-        """)
 
 # ------------------------------------------------------------
 # Cuerpo principal
@@ -483,7 +466,22 @@ else:
         st.metric("Días con cobertura completa (Grupo A)", f"{completos}/{len(dias)}")
     with col3:
         st.metric("Personas en Grupo B", len(df[df['grupo'] == 'B']['persona_id'].unique()))
-
+    
+    # Leyenda de colores (compacta, sin expander)
+    st.markdown("---")
+    st.markdown("**Colores de los turnos**")
+    colores = st.columns(5)
+    with colores[0]:
+        st.markdown("🟢 **M** = Mañana")
+    with colores[1]:
+        st.markdown("🟡 **T** = Tarde")
+    with colores[2]:
+        st.markdown("🔵 **N** = Noche")
+    with colores[3]:
+        st.markdown("🔴 **Festivo/Domingo**")
+    with colores[4]:
+        st.markdown("🔴 **V/PNR/IM/CD** = Ausencia")
+    
     # Botones de exportación (prominentes)
     st.markdown("---")
     col_export1, col_export2 = st.columns(2)
@@ -504,6 +502,6 @@ else:
 
 st.markdown("---")
 st.markdown(
-    "<div style='text-align: left;'> © 2026 Dairo García. Licencia MIT. Desarrollado para Tennis S.A.</div>",
+    "<div style='text-align: center;'> © 2026 Dairo García. Licencia MIT. Desarrollado para Tennis S.A.</div>",
     unsafe_allow_html=True
 )
