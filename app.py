@@ -94,7 +94,7 @@ def cargar_datos_mes(año: int, mes: int) -> pd.DataFrame:
     conn.close()
     return df
 
-def generar_calendario_completo(año: int, mes: int, ciclo: str, pais: str = 'CO') -> None:
+def generar_calendario_completo(año: int, mes: int, ciclo: str, pais: str = 'CO', balancear: bool = False) -> None:
     with st.spinner("Generando calendario..."):
         dfA, offsets_finales = ciclos.generar_calendario_grupoA(año, mes, ciclo=ciclo, pais=pais)
         ciclos.guardar_calendario_en_bd(dfA, año, mes)
@@ -102,6 +102,19 @@ def generar_calendario_completo(año: int, mes: int, ciclo: str, pais: str = 'CO
 
         dfB = grupo_b.generar_calendario_grupoB(año, mes, pais=pais)
         grupo_b.guardar_calendario_grupoB_en_bd(dfB, año, mes)
+
+        # Si se solicita balanceo, aplicarlo ahora
+        if balancear:
+            # Obtener el calendario combinado recién guardado
+            df_completo = ausencias.obtener_calendario_mes(año, mes)
+            # Aplicar balanceo (solo modifica Grupo A)
+            try:
+                df_balanceado = balanceo.aplicar_balanceo(df_completo, año, mes)
+                # Guardar los cambios en BD (solo días especiales)
+                balanceo.guardar_balanceo_en_bd(df_balanceado, año, mes)
+            except Exception as e:
+                import logging
+                logging.warning(f"[balanceo] Error no crítico al balancear calendario normal ({año}-{mes:02d}): {e}")
 
         st.success("Calendario generado y guardado correctamente.")
 
@@ -225,6 +238,7 @@ with st.sidebar:
 
     if st.button("🔄 Generar/Actualizar", key="btn_generar", use_container_width=True):
         config = database.obtener_configuracion()
+        balancear = (modo == 'normal')
         generar_calendario_completo(año, mes, ciclo, config['pais'])
         if 'alternativas' in st.session_state:
             del st.session_state['alternativas']
