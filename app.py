@@ -9,7 +9,7 @@ import sys
 import os
 from datetime import datetime, date
 import calendar
-from typing import List, Dict, Any
+from src import database, ciclos, grupo_b, ausencias, balanceo
 
 # ------------------------------------------------------------
 # Configuración de página (DEBE ser lo primero)
@@ -182,12 +182,15 @@ def generar_alternativas(año, mes, ciclo, pais, num_alternativas=7, modo='norma
 
         if modo == 'contingencia':
             df_mostrar, _ = ausencias.aplicar_contingencia_a_df(df_combinado, año, mes, pais)
-            # apicar valanceo adicional (ya que aplicar_contingencia_a_df no guarda en DB)
-            # y queremos que alternativa se muestre ya balanceada
-            from src import balanceo
-            df_mostrar = balanceo.aplicar_balanceo(df_mostrar, año, mes)
         else:
             df_mostrar = df_combinado
+
+        # Aplicar balanceo en ambos modos, capturando errores no críticos
+        try:
+            df_mostrar = balanceo.aplicar_balanceo(df_mostrar, año, mes)
+        except Exception as e:
+            import logging
+            logging.warning(f"[balanceo] Error no crítico en alternativas ({modo}, {año}-{mes:02d}): {e}")
 
         resumen = f"Libres: {df_mostrar[df_mostrar['turno']=='L']['persona_id'].nunique()}"
         alternativas.append({
